@@ -6,11 +6,13 @@ import { io as SocketIo } from "socket.io-client";
  * This should only listen (subscribe) to events, should not emit (publish)
  */
 export class SocketClient {
+    _serverUrl;
+    _master;
+    _channels = new Array();
+    _mutex = new Mutex();
+    _isDisposed = false;
+    _disposePromise = null;
     constructor(serverUrl) {
-        this._channels = new Array();
-        this._mutex = new Mutex();
-        this._isDisposed = false;
-        this._disposePromise = null;
         given(serverUrl, "serverUrl").ensureHasValue().ensureIsString();
         serverUrl = serverUrl.trim();
         if (serverUrl.endsWith("/"))
@@ -23,7 +25,6 @@ export class SocketClient {
     }
     async subscribe(channel, event) {
         // should be synchronized;
-        var _a;
         given(channel, "channel").ensureHasValue().ensureIsString();
         channel = channel.trim();
         given(event, "event").ensureHasValue().ensureIsString();
@@ -32,7 +33,7 @@ export class SocketClient {
             throw new ObjectDisposedException(this);
         await this._mutex.lock();
         try {
-            const socketChannel = (_a = this._channels.find(t => t.channel === channel)) !== null && _a !== void 0 ? _a : await this._createChannel(channel);
+            const socketChannel = this._channels.find(t => t.channel === channel) ?? await this._createChannel(channel);
             return socketChannel.subscribe(event);
         }
         finally {
@@ -98,14 +99,15 @@ export class SocketClient {
     }
 }
 class InternalSocketChannelSubscription {
+    _eventName;
+    _isUnsubscribed = false;
+    _eventHandler = null;
+    _connectionChangeHandler = null;
+    _unsubscribeHandler = null;
     get eventName() { return this._eventName; }
     get eventHandler() { return this._eventHandler; }
     get connectionChangeHandler() { return this._connectionChangeHandler; }
     constructor(eventName) {
-        this._isUnsubscribed = false;
-        this._eventHandler = null;
-        this._connectionChangeHandler = null;
-        this._unsubscribeHandler = null;
         given(eventName, "eventName").ensureHasValue().ensureIsString();
         this._eventName = eventName;
     }
@@ -132,12 +134,16 @@ class InternalSocketChannelSubscription {
     }
 }
 class SocketChannel {
+    _serverUrl;
+    _channel;
+    _socket;
+    _master;
+    _eventNames = new Set();
+    _subscriptions = new Array();
+    _isReconnecting = false;
+    _isDisposed = false;
     get channel() { return this._channel; }
     constructor(serverUrl, channel, socket, master) {
-        this._eventNames = new Set();
-        this._subscriptions = new Array();
-        this._isReconnecting = false;
-        this._isDisposed = false;
         given(serverUrl, "serverUrl").ensureHasValue().ensureIsString();
         this._serverUrl = serverUrl;
         given(channel, "channel").ensureHasValue().ensureIsString();

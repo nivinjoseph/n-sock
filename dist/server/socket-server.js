@@ -6,9 +6,11 @@ import { createAdapter } from "@socket.io/redis-adapter";
  * This should only manage socket connections, should not emit (publish) or listen (subscribe)??
  */
 export class SocketServer {
+    _socketServer;
+    _redisClient;
+    _isDisposed = false;
+    _disposePromise = null;
     constructor(httpServer, corsOrigin, redisClient) {
-        this._isDisposed = false;
-        this._disposePromise = null;
         given(httpServer, "httpServers").ensureHasValue().ensureIsObject().ensureIsInstanceOf(Server);
         given(corsOrigin, "corsOrigin").ensureHasValue().ensureIsString();
         given(redisClient, "redisClient").ensureHasValue().ensureIsObject();

@@ -5,9 +5,11 @@ import { ObjectDisposedException } from "@nivinjoseph/n-exception";
  * This should only emit (publish) events
  */
 export class SocketService {
+    _socketClient;
+    _redisClient;
+    _isDisposed = false;
+    _disposePromise = null;
     constructor(redisClient) {
-        this._isDisposed = false;
-        this._disposePromise = null;
         given(redisClient, "redisClient").ensureHasValue().ensureIsObject();
         this._redisClient = redisClient;
         this._socketClient = new Emitter(this._redisClient);
