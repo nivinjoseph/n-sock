@@ -40,6 +40,8 @@ export class SocketServer {
         if (!this._isDisposed) {
             this._isDisposed = true;
             this._disposePromise = new Promise((resolve, reject) => {
+                this._socketServer.disconnectSockets(true); // close existing sockets
+                this._socketServer.removeAllListeners();
                 // eslint-disable-next-line @typescript-eslint/no-floating-promises
                 this._socketServer.close((err) => {
                     if (err) {
