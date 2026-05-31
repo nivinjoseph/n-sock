@@ -11,6 +11,7 @@ import { createAdapter } from "@socket.io/redis-adapter";
  */
 export class SocketServer implements Disposable
 {
+    private readonly _httpServer: Server;
     private readonly _socketServer: SocketIoServer;
     private readonly _redisClient: RedisClientType<any, any, any, any, any>;
     private _subClient: RedisClientType<any, any, any, any, any> | null = null;
@@ -31,8 +32,10 @@ export class SocketServer implements Disposable
         //     pingTimeout: 5000,
         //     serveClient: false
         // });
+        
+        this._httpServer = httpServer;
 
-        this._socketServer = new SocketIoServer(httpServer, {
+        this._socketServer = new SocketIoServer(this._httpServer, {
             transports: ["websocket"],
             serveClient: false,
             cors: {
@@ -101,7 +104,6 @@ export class SocketServer implements Disposable
 
             this._disposePromise = new Promise<void>((resolve, reject) =>
             {
-                this._socketServer.disconnectSockets(true);  // close existing sockets
                 this._socketServer.removeAllListeners();
                 // eslint-disable-next-line @typescript-eslint/no-floating-promises
                 this._socketServer.close((err) =>
@@ -114,6 +116,11 @@ export class SocketServer implements Disposable
 
                     resolve();
                 });
+
+                // Forcibly destroy all lingering TCP sockets (including WebSocket-upgraded
+                // connections) so the close callback above can resolve immediately instead of
+                // waiting for idle clients to voluntarily disconnect.
+                this._httpServer.closeAllConnections();
             })
                 // close the duplicated subscriber client we created (the pub client is owned by the caller)
                 .then(async () =>
