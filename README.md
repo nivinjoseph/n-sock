@@ -116,7 +116,8 @@ The main server-side class for WebSocket connections.
 - `constructor(httpServer: Server, corsOrigin: string, redisClient: RedisClientType)`: Creates a new socket server instance with the specified HTTP server, CORS origin, and Redis client.
 
 #### Methods
-- `dispose(): Promise<void>`: Cleans up resources and stops the server.
+- `initialize(): Promise<void>`: Sets up the Redis adapter (using a dedicated subscriber client duplicated from the provided client) and starts listening for connections. Must be called and awaited before the server can handle clients.
+- `dispose(): Promise<void>`: Cleans up resources, stops the server, and closes the duplicated subscriber client.
 
 ### SocketService
 

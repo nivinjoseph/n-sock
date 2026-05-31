@@ -13,6 +13,8 @@ export class SocketServer implements Disposable
 {
     private readonly _socketServer: SocketIoServer;
     private readonly _redisClient: RedisClientType<any, any, any, any, any>;
+    private _subClient: RedisClientType<any, any, any, any, any> | null = null;
+    private _isInitialized = false;
     private _isDisposed = false;
     private _disposePromise: Promise<void> | null = null;
 
@@ -40,46 +42,35 @@ export class SocketServer implements Disposable
         });
 
         this._redisClient = redisClient;
+    }
+
+    /**
+     * Sets up the Redis adapter and starts listening for connections.
+     * Must be called (and awaited) before the server can handle clients.
+     *
+     * A Redis client in subscriber mode cannot issue regular commands, so the
+     * adapter requires a dedicated subscriber client distinct from the pub client.
+     */
+    public async initialize(): Promise<void>
+    {
+        if (this._isDisposed)
+            throw new Error("Cannot initialize a disposed SocketServer.");
+
+        if (this._isInitialized)
+            return;
+
+        this._isInitialized = true;
+
+        this._subClient = this._redisClient.duplicate();
+        await this._subClient.connect();
 
         // this._socketServer.adapter(SocketIoRedis.createAdapter({
         //     pubClient: this._redisClient,
-        //     subClient: this._redisClient
+        //     subClient: this._subClient
         // }));
 
-        this._socketServer.adapter(createAdapter(this._redisClient, this._redisClient));
+        this._socketServer.adapter(createAdapter(this._redisClient, this._subClient));
 
-        this._initialize();
-    }
-
-    public dispose(): Promise<void>
-    {
-        if (!this._isDisposed)
-        {
-            this._isDisposed = true;
-
-            this._disposePromise = new Promise((resolve, reject) =>
-            {
-                this._socketServer.disconnectSockets(true);  // close existing sockets
-                this._socketServer.removeAllListeners();
-                // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                this._socketServer.close((err) =>
-                {
-                    if (err)
-                    {
-                        reject(err);
-                        return;
-                    }
-
-                    resolve();
-                });
-            });
-        }
-
-        return this._disposePromise!;
-    }
-
-    private _initialize(): void
-    {
         this._socketServer.on("connection", (socket: Socket) =>
         {
             if (this._isDisposed)
@@ -100,5 +91,38 @@ export class SocketServer implements Disposable
                 console.log(`Client ${socket.id} joined channel ${nsp.name.substr(1)}`);
             });
         });
+    }
+
+    public dispose(): Promise<void>
+    {
+        if (!this._isDisposed)
+        {
+            this._isDisposed = true;
+
+            this._disposePromise = new Promise<void>((resolve, reject) =>
+            {
+                this._socketServer.disconnectSockets(true);  // close existing sockets
+                this._socketServer.removeAllListeners();
+                // eslint-disable-next-line @typescript-eslint/no-floating-promises
+                this._socketServer.close((err) =>
+                {
+                    if (err)
+                    {
+                        reject(err);
+                        return;
+                    }
+
+                    resolve();
+                });
+            })
+                // close the duplicated subscriber client we created (the pub client is owned by the caller)
+                .then(async () =>
+                {
+                    if (this._subClient != null && this._subClient.isOpen)
+                        await this._subClient.quit();
+                });
+        }
+
+        return this._disposePromise!;
     }
 }
