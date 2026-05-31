@@ -8,6 +8,8 @@ import { createAdapter } from "@socket.io/redis-adapter";
 export class SocketServer {
     _socketServer;
     _redisClient;
+    _subClient = null;
+    _isInitialized = false;
     _isDisposed = false;
     _disposePromise = null;
     constructor(httpServer, corsOrigin, redisClient) {
@@ -29,12 +31,39 @@ export class SocketServer {
             }
         });
         this._redisClient = redisClient;
+    }
+    /**
+     * Sets up the Redis adapter and starts listening for connections.
+     * Must be called (and awaited) before the server can handle clients.
+     *
+     * A Redis client in subscriber mode cannot issue regular commands, so the
+     * adapter requires a dedicated subscriber client distinct from the pub client.
+     */
+    async initialize() {
+        if (this._isDisposed)
+            throw new Error("Cannot initialize a disposed SocketServer.");
+        if (this._isInitialized)
+            return;
+        this._isInitialized = true;
+        this._subClient = this._redisClient.duplicate();
+        await this._subClient.connect();
         // this._socketServer.adapter(SocketIoRedis.createAdapter({
         //     pubClient: this._redisClient,
-        //     subClient: this._redisClient
+        //     subClient: this._subClient
         // }));
-        this._socketServer.adapter(createAdapter(this._redisClient, this._redisClient));
-        this._initialize();
+        this._socketServer.adapter(createAdapter(this._redisClient, this._subClient));
+        this._socketServer.on("connection", (socket) => {
+            if (this._isDisposed)
+                return;
+            console.log("Client connected", socket.id);
+            socket.on("n-sock-join_channel", (data) => {
+                given(data, "data").ensureHasValue().ensureIsObject().ensureHasStructure({ channel: "string" });
+                console.log(`Client ${socket.id} joining channel ${data.channel}`);
+                const nsp = this._socketServer.of(`/${data.channel}`);
+                socket.emit(`n-sock-joined_channel/${data.channel}`, { channel: nsp.name.substr(1) });
+                console.log(`Client ${socket.id} joined channel ${nsp.name.substr(1)}`);
+            });
+        });
     }
     dispose() {
         if (!this._isDisposed) {
@@ -50,23 +79,14 @@ export class SocketServer {
                     }
                     resolve();
                 });
+            })
+                // close the duplicated subscriber client we created (the pub client is owned by the caller)
+                .then(async () => {
+                if (this._subClient != null && this._subClient.isOpen)
+                    await this._subClient.quit();
             });
         }
         return this._disposePromise;
-    }
-    _initialize() {
-        this._socketServer.on("connection", (socket) => {
-            if (this._isDisposed)
-                return;
-            console.log("Client connected", socket.id);
-            socket.on("n-sock-join_channel", (data) => {
-                given(data, "data").ensureHasValue().ensureIsObject().ensureHasStructure({ channel: "string" });
-                console.log(`Client ${socket.id} joining channel ${data.channel}`);
-                const nsp = this._socketServer.of(`/${data.channel}`);
-                socket.emit(`n-sock-joined_channel/${data.channel}`, { channel: nsp.name.substr(1) });
-                console.log(`Client ${socket.id} joined channel ${nsp.name.substr(1)}`);
-            });
-        });
     }
 }
 //# sourceMappingURL=socket-server.js.map
