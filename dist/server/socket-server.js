@@ -6,6 +6,7 @@ import { createAdapter } from "@socket.io/redis-adapter";
  * This should only manage socket connections, should not emit (publish) or listen (subscribe)??
  */
 export class SocketServer {
+    _httpServer;
     _socketServer;
     _redisClient;
     _subClient = null;
@@ -22,7 +23,8 @@ export class SocketServer {
         //     pingTimeout: 5000,
         //     serveClient: false
         // });
-        this._socketServer = new SocketIoServer(httpServer, {
+        this._httpServer = httpServer;
+        this._socketServer = new SocketIoServer(this._httpServer, {
             transports: ["websocket"],
             serveClient: false,
             cors: {
@@ -69,7 +71,6 @@ export class SocketServer {
         if (!this._isDisposed) {
             this._isDisposed = true;
             this._disposePromise = new Promise((resolve, reject) => {
-                this._socketServer.disconnectSockets(true); // close existing sockets
                 this._socketServer.removeAllListeners();
                 // eslint-disable-next-line @typescript-eslint/no-floating-promises
                 this._socketServer.close((err) => {
@@ -79,6 +80,10 @@ export class SocketServer {
                     }
                     resolve();
                 });
+                // Forcibly destroy all lingering TCP sockets (including WebSocket-upgraded
+                // connections) so the close callback above can resolve immediately instead of
+                // waiting for idle clients to voluntarily disconnect.
+                this._httpServer.closeAllConnections();
             })
                 // close the duplicated subscriber client we created (the pub client is owned by the caller)
                 .then(async () => {
