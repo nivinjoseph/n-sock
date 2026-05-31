@@ -1,6 +1,6 @@
 {
     "name": "@nivinjoseph/n-sock",
-    "version": "2.0.7",
+    "version": "2.0.8",
     "description": "Socket IO based web sockets implementation compatible with event driven distributed systems",
     "packageManager": "yarn@4.15.0",
     "type": "module",
